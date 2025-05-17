@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Network Security Monitor</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f5f5f5;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .container {
+            max-width: 1200px;
+        }
+        .card {
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+        .card-header {
+            font-weight: bold;
+            background-color: #343a40;
+            color: white;
+            border-top-left-radius: 10px;
+            border-top-right-radius: 10px;
+        }
+        .log-container {
+            height: 500px;
+            overflow-y: auto;
+            background-color: #222;
+            color: #33ff33;
+            font-family: monospace;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .btn-group {
+            margin-bottom: 15px;
+        }
+        .btn-attack {
+            margin: 5px;
+            min-width: 120px;
+        }
+        .status-indicator {
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 5px;
+        }
+        .status-running {
+            background-color: #28a745;
+        }
+        .status-stopped {
+            background-color: #dc3545;
+        }
+        .alert {
+            margin-top: 15px;
+        }
+        .phishing { color: #ff9966; }
+        .sql { color: #ff6666; }
+        .scan { color: #66ccff; }
+        .ddos { color: #ff66ff; }
+        .normal { color: #33ff33; }
+    </style>
+</head>
+<body>
+    <div class="container mt-4">
+        <h1 class="text-center mb-4">Network Attack Simulation & IDS</h1>
+        
+        <div class="row">
+            <!-- Control Panel -->
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-header">Control Panel</div>
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <div>
+                                <span class="status-indicator" id="status-light"></span>
+                                <span id="status-text">Checking status...</span>
+                            </div>
+                            <div id="current-mode-container" style="display: none;">
+                                <span class="badge bg-info" id="current-mode"></span>
+                            </div>
+                        </div>
+                        
+                        <div class="d-grid gap-2">
+                            <button id="start-btn" class="btn btn-success mb-2">Start Monitoring</button>
+                            <button id="stop-btn" class="btn btn-danger mb-3">Stop Monitoring</button>
+                        </div>
+                        
+                        <hr>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Filter Logs By:</label>
+                            <select id="filter-select" class="form-select">
+                                <option value="">All Traffic</option>
+                                <option value="phishing">Phishing</option>
+                                <option value="sql">SQL Injection</option>
+                                <option value="scan">Port Scans</option>
+                                <option value="tcp">TCP Traffic</option>
+                                <option value="udp">UDP Traffic</option>
+                                <option value="ddos">DDoS</option>
+                            </select>
+                        </div>
+                        
+                        <div class="d-grid">
+                            <button id="apply-filter-btn" class="btn btn-primary mb-2">Apply Filter</button>
+                            <button id="clear-logs-btn" class="btn btn-warning">Clear Logs</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">Attack Simulation</div>
+                    <div class="card-body">
+                        <div class="d-flex flex-wrap justify-content-center">
+                            <button class="btn btn-outline-warning btn-attack" data-attack="phishing">
+                                Phishing
+                            </button>
+                            <button class="btn btn-outline-danger btn-attack" data-attack="sql">
+                                SQL Injection
+                            </button>
+                            <button class="btn btn-outline-info btn-attack" data-attack="scan">
+                                Port Scan
+                            </button>
+                            <button class="btn btn-outline-secondary btn-attack" data-attack="tcp">
+                                TCP Flood
+                            </button>
+                            <button class="btn btn-outline-primary btn-attack" data-attack="udp">
+                                UDP Flood
+                            </button>
+                            <button class="btn btn-outline-dark btn-attack" data-attack="ddos">
+                                DDoS
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Log Viewer -->
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span>Live Network Traffic Logs</span>
+                        <div>
+                            <label class="form-check-label">
+                                <input class="form-check-input" type="checkbox" id="auto-scroll" checked>
+                                Auto-scroll
+                            </label>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="log-container" id="log-viewer">
+                            <div class="text-center text-muted pt-5">
+                                <p>Waiting for logs...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="alert-container"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            // Check status initially
+            checkStatus();
+            
+            // Poll status every 3 seconds
+            setInterval(checkStatus, 3000);
+            
+            // Poll logs every 1 second
+            setInterval(fetchLogs, 1000);
+            
+            // Set up button handlers
+            $("#start-btn").click(function() {
+                startSniffer();
+            });
+            
+            $("#stop-btn").click(function() {
+                stopSniffer();
+            });
+            
+            $("#clear-logs-btn").click(function() {
+                clearLogs();
+            });
+            
+            $("#apply-filter-btn").click(function() {
+                applyFilter();
+            });
+            
+            // Attack simulation buttons
+            $(".btn-attack").click(function() {
+                const attackType = $(this).data("attack");
+                runAttack(attackType);
+            });
+            
+            // Functions
+            function checkStatus() {
+                $.get("/status", function(data) {
+                    if (data.status === "running") {
+                        $("#status-light").removeClass("status-stopped").addClass("status-running");
+                        $("#status-text").text("Monitoring Active");
+                        $("#start-btn").prop("disabled", true);
+                        $("#stop-btn").prop("disabled", false);
+                        
+                        // Show active mode if any
+                        if (data.mode && data.mode !== "none") {
+                            $("#current-mode-container").show();
+                            $("#current-mode").text("Filter: " + data.mode.toUpperCase());
+                        } else {
+                            $("#current-mode-container").show();
+                            $("#current-mode").text("All Traffic");
+                        }
+                    } else {
+                        $("#status-light").removeClass("status-running").addClass("status-stopped");
+                        $("#status-text").text("Monitoring Stopped");
+                        $("#start-btn").prop("disabled", false);
+                        $("#stop-btn").prop("disabled", true);
+                        $("#current-mode-container").hide();
+                    }
+                });
+            }
+            
+            function startSniffer() {
+                const filter = $("#filter-select").val();
+                
+                $.ajax({
+                    url: "/start_sniffer",
+                    type: "POST",
+                    contentType: "application/json",
+                    data: JSON.stringify({
+                        filter: filter,
+                        clear_logs: true
+                    }),
+                    success: function(data) {
+                        showAlert(data.message, data.status);
+                        checkStatus();
+                    },
+                    error: function() {
+                        showAlert("Failed to start packet monitoring", "error");
+                    }
+                });
+            }
+            
+            function stopSniffer() {
+                $.ajax({
+                    url: "/stop_sniffer",
+                    type: "POST",
+                    success: function(data) {
+                        showAlert(data.message, data.status);
+                        checkStatus();
+                    },
+                    error: function() {
+                        showAlert("Failed to stop packet monitoring", "error");
+                    }
+                });
+            }
+            
+            function applyFilter() {
+                const filter = $("#filter-select").val();
+                
+                $.ajax({
+                    url: "/filter_logs",
+                    type: "POST",
+                    contentType: "application/json",
+                    data: JSON.stringify({
+                        filter: filter
+                    }),
+                    success: function(data) {
+                        showAlert("Filter applied: " + (filter ? filter.toUpperCase() : "All Traffic"), "success");
+                        checkStatus();
+                    },
+                    error: function() {
+                        showAlert("Failed to apply filter", "error");
+                    }
+                });
+            }
+            
+            function runAttack(attackType) {
+                $.ajax({
+                    url: "/run_attack",
+                    type: "POST",
+                    contentType: "application/json",
+                    data: JSON.stringify({
+                        attack: attackType
+                    }),
+                    success: function(data) {
+                        showAlert(data.message, data.status);
+                    },
+                    error: function() {
+                        showAlert("Failed to run attack simulation", "error");
+                    }
+                });
+            }
+            
+            function clearLogs() {
+                $.ajax({
+                    url: "/clear_logs",
+                    type: "POST",
+                    success: function(data) {
+                        showAlert(data.message, data.status);
+                        $("#log-viewer").html('<div class="text-center text-muted pt-5"><p>Logs cleared</p></div>');
+                    },
+                    error: function() {
+                        showAlert("Failed to clear logs", "error");
+                    }
+                });
+            }
+            
+            function fetchLogs() {
+                $.get("/logs", function(data) {
+                    if (data.logs && data.logs.length > 0) {
+                        const logContainer = $("#log-viewer");
+                        logContainer.empty();
+                        
+                        data.logs.forEach(function(log) {
+                            let logClass = "normal";
+                            
+                            if (log.includes("PHISHING")) logClass = "phishing";
+                            else if (log.includes("SQL INJECTION")) logClass = "sql";
+                            else if (log.includes("SCAN") || log.includes("FIN") || log.includes("SYN") || log.includes("XMAS")) logClass = "scan";
+                            else if (log.includes("DDoS")) logClass = "ddos";
+                            
+                            logContainer.append(`<div class="${logClass}">${log}</div>`);
+                        });
+                        
+                        // Auto-scroll to bottom if enabled
+                        if ($("#auto-scroll").is(":checked")) {
+                            logContainer.scrollTop(logContainer[0].scrollHeight);
+                        }
+                    }
+                });
+            }
+            
+            function showAlert(message, status) {
+                const alertClass = status === "success" ? "alert-success" : 
+                                  status === "warning" ? "alert-warning" : "alert-danger";
+                
+                const alertHTML = `
+                    <div class="alert ${alertClass} alert-dismissible fade show" role="alert">
+                        ${message}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                `;
+                
+                $("#alert-container").html(alertHTML);
+                
+                // Auto-dismiss after 5 seconds
+                setTimeout(function() {
+                    $(".alert").alert('close');
+                }, 5000);
+            }
+        });
+    </script>
+</body>
+</html>
